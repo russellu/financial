@@ -1,0 +1,91 @@
+clear all ; close all ; 
+currs =   {'AUDCAD','AUDCHF','AUDJPY','AUDNZD','AUDSGD','AUDUSD','CADCHF','CADHKD','CADJPY','CHFJPY','CHFSGD','EURAUD','EURCAD','EURCHF','EURDKK','EURGBP','EURHKD','EURJPY','EURNZD','EURPLN','EURSEK','EURSGD','EURTRY','EURUSD','GBPAUD','GBPCAD','GBPCHF','GBPJPY','GBPNZD','GBPUSD','HKDJPY','NZDCAD','NZDCHF','NZDJPY','NZDUSD','SGDJPY','USDCAD','USDCHF','USDCNH','USDDKK','USDHKD','USDJPY','USDMXN','USDNOK','USDSGD','USDTRY','USDZAR','XAGUSD','XAUUSD','ZARJPY'} ; 
+spreads = [ 2.5,     2.5,     0.95,    2.33,    5,       0.9,     1.95,    16.0     1.05,    1.5,     9,       1.9,     1.85,    1.0      4.0      0.85,    18.0,    0.6,     3.6,     20.0,    19.0,    5.25,    9.0,     0.25,    3.35,    3.5,     2.2,     1.6,     5.0,     0.96,    28.0,    3.0,     2.1,     2.1,     1.05,    2.5,     0.9,     1.05,    2.5,     4.9,     3.0,     0.35,    50.0,     22.0,    2.0,     6.0,     100.0,   3.05,    28.0,    0.7   ]; 
+
+cd c:/users/acer/documents/indices_4 ; ls 
+for ccy=6%:length(currs) ; 
+    ccy_current = dir([currs{ccy},'*.csv']) ; 
+    if (~isempty(strfind(ccy_current.name,'JPY')) && isempty(strfind(ccy_current.name,'HKD')) ) || ~isempty(strfind(ccy_current.name,'XAG')) || ~isempty(strfind(ccy_current.name,'XAU')) 
+        lim1 = -0.4 ; lim2 = 0.4 ; mfactor = 0.01 ; 
+    else 
+        lim1 = -0.004 ; lim2 = 0.004 ; mfactor = 0.0001 ; 
+    end
+    totalcost = (spreads(ccy) + 0.35 + 0.9)*mfactor ; 
+    fid = fopen(ccy_current.name) ; 
+    dkdata = textscan(fid,'%s %s %f %f %f %f %f','delimiter',' ') ; 
+    fclose(fid) ; 
+    d5 = dkdata{6} ; d5 = d5(1:30:end) ; 
+    incrl = 2500 ; inds = zeros(floor(length(d5)./incrl),incrl) ; 
+    icount = 1 ; for i=1:incrl:length(d5)-incrl ; inds(icount,:) = i:i+incrl-1 ; icount = icount + 1 ; end
+    
+    mvgs1 = [10,30,80,150,290,450,650,880,1050,1250]; 
+    pipthreshs = [1,5,10,20]*mfactor ; 
+    clear mvg p mean
+    for p = 1:length(mvgs1)  
+        for i=mvgs1(p)+1:length(d5)
+            if i==mvgs1(p)+1
+                mvg(i,p) = mean(d5(i-mvgs1(p)+1:i)) ; 
+            else
+                mvg(i,p) = mvg(i-1,p) + d5(i)/(mvgs1(p)) - d5(i-mvgs1(p))/(mvgs1(p)) ;
+            end  
+        end
+    end
+    
+    
+    clear allprofits alltracks allntrades
+    for idx=1:size(inds,1)
+        for m1=1:length(mvgs1) ; disp(['curr=',currs{ccy},', m1=',num2str(m1),', totalcost=',num2str(totalcost),', idx = ',num2str(idx)]) ;
+            for m2=1:length(mvgs1) ; 
+                for m3=1:length(mvgs1) ; 
+                    for pipthresh=1:length(pipthreshs)
+                    trade = false ; entry = 0 ; buy = false ; sell = false ; profit = 0 ; ntrades = 0 ; 
+                    alltrades = [] ; sellentries = [] ; buyentries = [] ; sellexits = [] ; buyexits = [] ;trackprofits = [] ; 
+                    for i=inds(idx,1):inds(idx,incrl)
+                        if mod(i,100)== 0 ; trackprofits(length(trackprofits)+1) = profit ; end
+                        if trade == false
+                            if d5(i)-pipthreshs(pipthresh) > mvg(i,(m1)) % buy mode
+                                if d5(i) < mvg(i,(m2)) && d5(i-1) > mvg(i,(m2)) % cross down
+                                    trade = true ; entry = d5(i) ; buy = true ; ntrades = ntrades + 1  ;
+                                end
+                            elseif d5(i)+ pipthreshs(pipthresh) < mvg(i,(m1)) % sell mode
+                                if d5(i) > mvg(i,(m2)) && d5(i-1) < mvg(i,(m2)) % cross up
+                                    trade = true ; entry = d5(i) ; sell = true ; ntrades = ntrades + 1 ;  
+                                end
+                            end
+                        elseif trade == true
+                            if buy
+                                if d5(i) > mvg(i,(m3)) && d5(i-1) < mvg(i,(m3))
+                                    buy = false ; profit = profit + d5(i)-entry - totalcost ; trade = false ; alltrades(length(alltrades)+1) = d5(i) - entry - totalcost ; 
+                                end
+                            elseif sell
+                                if d5(i) < mvg(i,(m3)) && d5(i-1) > mvg(i,(m3))
+                                    sell = false ; profit = profit + entry-d5(i) - totalcost ; trade = false ; alltrades(length(alltrades)+1) = entry - d5(i) -totalcost ; 
+                                end
+                            end
+                        end
+                    end
+                    allprofits(m1,m2,m3,pipthresh,idx) = profit ; 
+                    allntrades(m1,m2,m3,pipthresh,idx) = ntrades ; 
+                    alltracks{m1,m2,m3,pipthresh,idx} = alltrades ; 
+                    alltrackprofits(m1,m2,m3,pipthresh,idx,:) = trackprofits ; 
+                    end
+                end
+            end
+        end
+    end
+end
+divp = allprofits./allntrades ; 
+cv = mean(divp,5)./std(divp,0,5) ; 
+
+
+mdiv1 = squeeze(mean(divp(:,:,:,:,1:2:end),5)) ; mdiv2 = squeeze(mean(divp(:,:,:,:,2:2:end),5)) ; 
+figure,for i=1:5 ; subplot(2,3,i) ; imagesc(squeeze(mdiv1(:,:,i,2)),[-.002,.002]) ; end ; 
+figure,for i=1:5 ; subplot(2,3,i) ; imagesc(squeeze(mdiv2(:,:,i,2)),[-.002,.002]) ; end
+for i=1:4 ; figure ; for j=1:10 ; subplot(3,4,j) ; imagesc(squeeze(cv(:,:,j,i)),[0,2]) ; end ; end
+param = [7,6,5,2] ; 
+
+
+
+
+
+
